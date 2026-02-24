@@ -1,188 +1,167 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime
 
-# ==========================================
-# PAGE CONFIGURATION & MINIMALIST PASTEL CSS
-# ==========================================
-st.set_page_config(page_title="My Budget", page_icon="🌸", layout="centered")
+# Set page configuration
+st.set_page_config(page_title="Personal Finance Dashboard", page_icon="💸", layout="wide")
 
-st.markdown("""
-    <style>
-    /* Hide default Streamlit elements for a cleaner mobile app feel */
-    #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
-    footer {visibility: hidden;}
+def load_and_clean_data(uploaded_file):
+    """Reads the uploaded file and formats the columns appropriately."""
+    # Define the expected columns based on the user's sample data
+    col_names = ["Account", "Date", "Description", "Expense", "Income", "Category"]
     
-    /* Top padding adjustment for mobile */
-    .block-container {
-        padding-top: 2rem !important;
-        padding-bottom: 2rem !important;
-    }
-
-    /* Pastel Metric Cards */
-    div[data-testid="metric-container"] {
-        background-color: #FAFAFA;
-        border: 1px solid #F0F0F0;
-        padding: 15px;
-        border-radius: 16px;
-        box-shadow: 0px 2px 10px rgba(0,0,0,0.02);
-    }
+    # Read CSV without a header
+    df = pd.read_csv(uploaded_file, header=None, names=col_names)
     
-    /* Global Font Tweak for Minimalism */
-    * {
-        font-family: 'Helvetica Neue', sans-serif;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# Pastel color palette for charts
-PASTEL_COLORS = ['#FFB3BA', '#BAE1FF', '#BAFFC9', '#FFDFBA', '#E2CBF7', '#FFFFBA', '#FADADD', '#D4F0F0', '#FFC4C4']
-
-
-# ==========================================
-# DATA PROCESSING FUNCTION
-# ==========================================
-@st.cache_data
-def parse_budget_file(file):
-    """
-    Robustly parses the text file, handling extra commas in the detail section.
-    Format expected: bank, date, [details...], credit, debit, category
-    """
-    lines = file.getvalue().decode("utf-8").splitlines()
-    data = []
-    
-    for line in lines:
-        if not line.strip(): continue
-        parts = line.split(',')
-        
-        # Ensure we have at least the 6 basic columns
-        if len(parts) >= 6:
-            bank = parts[0].strip()
-            date_str = parts[1].strip()
-            category = parts[-1].strip()
+    # Clean up any trailing/leading whitespaces in string columns
+    string_cols = ["Account", "Description", "Category"]
+    for col in string_cols:
+        if df[col].dtype == 'object':
+            df[col] = df[col].str.strip()
             
-            try:
-                # The last two items before category are debit and credit
-                debit = float(parts[-2].strip() or 0)
-                credit = float(parts[-3].strip() or 0)
-            except ValueError:
-                continue # Skip invalid numerical rows
-                
-            # Rejoin anything in the middle as the transaction detail
-            detail = ', '.join(parts[2:-3]).strip()
-            # Clean up empty commas from the sample format (e.g., ",buy toto")
-            if detail.startswith(','): detail = detail[1:].strip()
-                
-            data.append([bank, date_str, detail, credit, debit, category])
-            
-    df = pd.DataFrame(data, columns=['Account', 'Date', 'Detail', 'Spend (Credit)', 'Income (Debit)', 'Category'])
+    # Convert dates to datetime objects
+    df['Date'] = pd.to_datetime(df['Date'])
     
-    # Parse dates
-    df['Date'] = pd.to_datetime(df['Date'], format='%d %b %Y', errors='coerce')
-    df = df.dropna(subset=['Date'])
-    df['Month_Year'] = df['Date'].dt.strftime('%b %Y')
-    df['Month_Order'] = df['Date'].dt.to_period('M') # For sorting
+    # Ensure numerical columns are correctly typed
+    df['Expense'] = pd.to_numeric(df['Expense'], errors='coerce').fillna(0)
+    df['Income'] = pd.to_numeric(df['Income'], errors='coerce').fillna(0)
+    
+    # Sort chronologically
+    df = df.sort_values('Date')
     
     return df
 
+# Main Title
+st.title("💸 Monthly Spending Dashboard")
+st.markdown("Upload your text/csv file to visualize your spending habits, filter by categories, and track your finances.")
 
-# ==========================================
-# APP UI & DASHBOARD
-# ==========================================
-st.title("🌸 Monthly Budget")
-st.write("Upload your transaction text file to view your spending.")
-
-uploaded_file = st.file_uploader("Choose a text file (.txt or .csv)", type=["txt", "csv"])
+# Sidebar - File Upload and Filters
+st.sidebar.header("1. Upload Data")
+uploaded_file = st.sidebar.file_uploader("Upload your spending data (.txt or .csv)", type=["txt", "csv"])
 
 if uploaded_file is not None:
-    # Load Data
-    df = parse_budget_file(uploaded_file)
-    
-    if df.empty:
-        st.error("No valid data found. Please check your file format.")
-    else:
+    try:
+        # Load the data
+        raw_df = load_and_clean_data(uploaded_file)
+        
         # --- FILTERS ---
-        # Sort months chronologically
-        months = sorted(df['Month_Order'].unique())
-        month_labels = [m.strftime('%b %Y') for m in months]
-        month_labels.insert(0, "All Time")
+        st.sidebar.header("2. Filters")
         
-        selected_month = st.selectbox("Select Month", month_labels)
+        # Date Filter
+        min_date = raw_df['Date'].min().date()
+        max_date = raw_df['Date'].max().date()
         
-        # Filter dataframe
-        if selected_month != "All Time":
-            filtered_df = df[df['Month_Year'] == selected_month]
+        if min_date == max_date:
+            st.sidebar.info(f"Data is only for one day: {min_date}")
+            start_date, end_date = min_date, max_date
         else:
-            filtered_df = df
-            
-        # --- METRICS ---
-        total_spend = filtered_df['Spend (Credit)'].sum()
-        total_income = filtered_df['Income (Debit)'].sum()
-        net_spend = total_spend - total_income
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Spend", f"${total_spend:,.2f}")
-        with col2:
-            st.metric("Income/Refunds", f"${total_income:,.2f}")
-        with col3:
-            st.metric("Net Spend", f"${net_spend:,.2f}")
-            
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        # --- CHARTS ---
-        # 1. Donut Chart: Spending by Category
-        st.subheader("Spending by Category")
-        spend_by_cat = filtered_df[filtered_df['Spend (Credit)'] > 0].groupby('Category')['Spend (Credit)'].sum().reset_index()
-        
-        if not spend_by_cat.empty:
-            fig_pie = px.pie(
-                spend_by_cat, 
-                values='Spend (Credit)', 
-                names='Category', 
-                hole=0.5,
-                color_discrete_sequence=PASTEL_COLORS
-            )
-            fig_pie.update_traces(textinfo='percent+label', textposition='inside', showlegend=False)
-            fig_pie.update_layout(
-                margin=dict(t=10, b=10, l=10, r=10),
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)"
-            )
-            st.plotly_chart(fig_pie, use_container_width=True)
-        else:
-            st.info("No spending data to display for this period.")
+            date_range = st.sidebar.date_input("Select Date Range", (min_date, max_date), min_value=min_date, max_value=max_date)
+            if len(date_range) == 2:
+                start_date, end_date = date_range
+            else:
+                start_date, end_date = min_date, max_date
 
-        # 2. Bar Chart: Daily Spending Trend
-        st.subheader("Daily Spend Trend")
-        daily_spend = filtered_df.groupby('Date')['Spend (Credit)'].sum().reset_index()
+        # Category Filter (Useful to exclude massive outliers like "Invest Transfer")
+        all_categories = raw_df['Category'].unique().tolist()
+        selected_categories = st.sidebar.multiselect(
+            "Select Categories to Include",
+            options=all_categories,
+            default=all_categories
+        )
         
-        if not daily_spend.empty:
-            fig_bar = px.bar(
-                daily_spend, 
-                x='Date', 
-                y='Spend (Credit)',
-                color_discrete_sequence=['#BAE1FF']
-            )
-            fig_bar.update_layout(
-                margin=dict(t=10, b=10, l=10, r=10),
-                xaxis_title="",
-                yaxis_title="",
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                xaxis=dict(showgrid=False),
-                yaxis=dict(showgrid=True, gridcolor="#F0F0F0")
-            )
-            st.plotly_chart(fig_bar, use_container_width=True)
+        # Account Filter
+        all_accounts = raw_df['Account'].unique().tolist()
+        selected_accounts = st.sidebar.multiselect(
+            "Select Accounts",
+            options=all_accounts,
+            default=all_accounts
+        )
+
+        # Apply Filters
+        mask = (
+            (raw_df['Date'].dt.date >= start_date) & 
+            (raw_df['Date'].dt.date <= end_date) &
+            (raw_df['Category'].isin(selected_categories)) &
+            (raw_df['Account'].isin(selected_accounts))
+        )
+        filtered_df = raw_df[mask]
+
+        # --- KPI METRICS ---
+        st.subheader("At a Glance")
+        kpi1, kpi2, kpi3 = st.columns(3)
+        
+        total_expense = filtered_df['Expense'].sum()
+        total_income = filtered_df['Income'].sum()
+        net_flow = total_income - total_expense
+        
+        kpi1.metric(label="Total Expenses 📉", value=f"${total_expense:,.2f}")
+        kpi2.metric(label="Total Income 📈", value=f"${total_income:,.2f}")
+        kpi3.metric(label="Net Flow ⚖️", value=f"${net_flow:,.2f}", delta=float(net_flow))
+
+        st.divider()
+
+        # --- CHARTS ---
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader("Expenses by Category")
+            if total_expense > 0:
+                # Group by category and sum expenses
+                cat_expense = filtered_df[filtered_df['Expense'] > 0].groupby('Category')['Expense'].sum().reset_index()
+                fig_pie = px.pie(cat_expense, values='Expense', names='Category', hole=0.4, 
+                                 color_discrete_sequence=px.colors.sequential.RdBu)
+                fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig_pie, use_container_width=True)
+            else:
+                st.info("No expenses found for the selected filters.")
+
+        with col2:
+            st.subheader("Daily Spending Trend")
+            # Group by date
+            daily_expense = filtered_df.groupby('Date')['Expense'].sum().reset_index()
+            if not daily_expense.empty and daily_expense['Expense'].sum() > 0:
+                fig_line = px.bar(daily_expense, x='Date', y='Expense', 
+                                  labels={'Expense': 'Amount Spent ($)'},
+                                  color_discrete_sequence=['#EF553B'])
+                st.plotly_chart(fig_line, use_container_width=True)
+            else:
+                st.info("No expense trends available for the selected filters.")
+
+        st.divider()
+
+        col3, col4 = st.columns([1, 2])
+        
+        with col3:
+            st.subheader("Spending by Account")
+            acc_expense = filtered_df[filtered_df['Expense'] > 0].groupby('Account')['Expense'].sum().reset_index()
+            if not acc_expense.empty:
+                fig_bar = px.bar(acc_expense, x='Account', y='Expense', color='Account',
+                                 labels={'Expense': 'Total Spent ($)'})
+                st.plotly_chart(fig_bar, use_container_width=True)
+            else:
+                st.info("No data to show.")
+
+        with col4:
+            st.subheader("Detailed Transactions")
+            # Format dataframe for display
+            display_df = filtered_df.copy()
+            display_df['Date'] = display_df['Date'].dt.strftime('%d %b %Y')
+            display_df['Expense'] = display_df['Expense'].apply(lambda x: f"${x:,.2f}" if x > 0 else "-")
+            display_df['Income'] = display_df['Income'].apply(lambda x: f"${x:,.2f}" if x > 0 else "-")
             
-        # --- TRANSACTIONS TABLE ---
-        st.subheader("Recent Transactions")
-        display_cols = ['Date', 'Account', 'Detail', 'Spend (Credit)', 'Income (Debit)', 'Category']
-        display_df = filtered_df[display_cols].sort_values(by='Date', ascending=False)
-        
-        # Format dates back to string for clean display
-        display_df['Date'] = display_df['Date'].dt.strftime('%d %b %Y')
-        
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+    except Exception as e:
+        st.error(f"An error occurred while processing the file: {e}")
+        st.info("Please ensure your uploaded file matches the expected comma-separated format: Account, Date, Description, Expense, Income, Category.")
+
+else:
+    st.info("👈 Please upload your spending data file in the sidebar to get started.")
+    
+    st.markdown("### Expected File Format (No Headers Required)")
+    st.code("""
+UOBOne,19 Feb 2026,top up YouTrip for CNY KL trip,100,0,Travel
+UOBOne,23 Feb 2026,Jee pay Netflix ,0,90,Entertainment
+UOBOne,23 Feb 2026,Transfer sgd9000 to IBKR,9000,0,Invest Transfer
+OneCC,23 Feb 2026,Pay SP Bill,83.31,0,Utilities
+    """, language="text")
