@@ -13,7 +13,7 @@ st.markdown("""
     .main { background-color: #f8fafc; }
     .stMetric { background-color: white; padding: 20px; border-radius: 15px; border: 1px solid #e2e8f0; }
     </style>
-    """, unsafe_content_allowed)
+    """, unsafe_allow_html=True) # Fixed the parameter name here
 
 # --- Utilities ---
 def format_sgd(val):
@@ -53,7 +53,7 @@ def process_csv_data(uploaded_file):
 # --- Main UI ---
 st.title("📊 Budget Insight")
 
-uploaded_file = st.file_file_uploader("Upload your transaction CSV", type=['csv', 'txt'])
+uploaded_file = st.file_uploader("Upload your transaction CSV", type=['csv', 'txt'])
 
 if uploaded_file:
     df = process_csv_data(uploaded_file)
