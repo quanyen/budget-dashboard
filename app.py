@@ -108,8 +108,9 @@ if uploaded_file is not None:
             if total_expense > 0:
                 # Group by category and sum expenses
                 cat_expense = filtered_df[filtered_df['Expense'] > 0].groupby('Category')['Expense'].sum().reset_index()
+                pastel_colors = ['#fca5a5', '#fdba74', '#fde047', '#86efac', '#93c5fd', '#c4b5fd', '#f9a8d4']
                 fig_pie = px.pie(cat_expense, values='Expense', names='Category', hole=0.4, 
-                                 color_discrete_sequence=px.colors.sequential.RdBu)
+                                 color_discrete_sequence=pastel_colors)
                 fig_pie.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig_pie, use_container_width=True)
             else:
@@ -122,7 +123,7 @@ if uploaded_file is not None:
             if not daily_expense.empty and daily_expense['Expense'].sum() > 0:
                 fig_line = px.bar(daily_expense, x='Date', y='Expense', 
                                   labels={'Expense': 'Amount Spent ($)'},
-                                  color_discrete_sequence=['#EF553B'])
+                                  color_discrete_sequence=['#93c5fd'])
                 st.plotly_chart(fig_line, use_container_width=True)
             else:
                 st.info("No expense trends available for the selected filters.")
@@ -135,8 +136,10 @@ if uploaded_file is not None:
             st.subheader("Spending by Account")
             acc_expense = filtered_df[filtered_df['Expense'] > 0].groupby('Account')['Expense'].sum().reset_index()
             if not acc_expense.empty:
+                acc_colors = ['#c4b5fd', '#6ee7b7', '#fcd34d', '#fca5a5', '#93c5fd']
                 fig_bar = px.bar(acc_expense, x='Account', y='Expense', color='Account',
-                                 labels={'Expense': 'Total Spent ($)'})
+                                 labels={'Expense': 'Total Spent ($)'},
+                                 color_discrete_sequence=acc_colors)
                 st.plotly_chart(fig_bar, use_container_width=True)
             else:
                 st.info("No data to show.")
@@ -160,8 +163,5 @@ else:
     
     st.markdown("### Expected File Format (No Headers Required)")
     st.code("""
-UOBOne,19 Feb 2026,top up YouTrip for CNY KL trip,100,0,Travel
-UOBOne,23 Feb 2026,Jee pay Netflix ,0,90,Entertainment
-UOBOne,23 Feb 2026,Transfer sgd9000 to IBKR,9000,0,Invest Transfer
-OneCC,23 Feb 2026,Pay SP Bill,83.31,0,Utilities
+bank account,date, transaction detail, credit, debit ,spend category
     """, language="text")
